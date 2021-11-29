@@ -171,8 +171,6 @@ class BertEmbeddings(nn.Module):
         self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
         self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
-        self.prefix_embeddings = nn.Embedding(config.prefix_length, config.hidden_size)
-        self.prefix_length = config.prefix_length
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -212,14 +210,14 @@ class BertEmbeddings(nn.Module):
                 token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
-            prefix_embds = self.prefix_embeddings(input_ids[:,:self.prefix_length])
-            inputs_embeds = self.word_embeddings(input_ids[:,self.prefix_length:])
+            # prefix_embds = self.prefix_embeddings(input_ids[:,:self.prefix_length])
+            inputs_embeds = self.word_embeddings(input_ids)#[:,self.prefix_length:])
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         # print("prefix_embds:",prefix_embds.shape)
         # print("inputs_embeds:",inputs_embeds.shape)
         # print("token_type_embeddings:",token_type_embeddings.shape)
-        # embeddings = inputs_embeds + token_type_embeddings
-        embeddings = torch.cat((prefix_embds,inputs_embeds), 1) + token_type_embeddings
+        embeddings = inputs_embeds + token_type_embeddings
+        # embeddings = torch.cat((prefix_embds,inputs_embeds), 1) + token_type_embeddings
         # print(embeddings.shape)
         if self.position_embedding_type == "absolute":
             position_embeddings = self.position_embeddings(position_ids)
@@ -552,6 +550,7 @@ class BertEncoder(nn.Module):
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
+        prefix_embeddings = None,
     ):
         all_hidden_states = () if output_hidden_states else None
         all_self_attentions = () if output_attentions else None
@@ -559,6 +558,16 @@ class BertEncoder(nn.Module):
 
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
+            # For each layer append the prefx embeddings
+            print(type(prefix_embeddings))
+            if(isinstance(prefix_embeddings,torch.Tensor)):
+                # print("hidden_states:",hidden_states.shape)
+                # print("prefix shape: ",prefix_embeddings.shape)
+                if(i==0):
+                    hidden_states = torch.cat((prefix_embeddings,hidden_states),dim=1)
+                else:
+                    hidden_states = torch.cat((prefix_embeddings,hidden_states[:,prefix_embeddings.shape[1]:,:]),dim=1)
+                # print("hidden_states:",hidden_states.shape)
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -915,6 +924,7 @@ class BertModel(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        prefix_embeddings=None,
     ):
         r"""
         encoder_hidden_states  (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, hidden_size)`, `optional`):
@@ -1013,6 +1023,7 @@ class BertModel(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            prefix_embeddings=prefix_embeddings,
         )
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
