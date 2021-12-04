@@ -559,7 +559,7 @@ class BertEncoder(nn.Module):
         next_decoder_cache = () if use_cache else None
         for i, layer_module in enumerate(self.layer):
             # For each layer append the prefx embeddings
-            print(type(prefix_embeddings))
+            # print(type(prefix_embeddings))
             if(isinstance(prefix_embeddings,torch.Tensor)):
                 # print("hidden_states:",hidden_states.shape)
                 # print("prefix shape: ",prefix_embeddings.shape)
@@ -1521,7 +1521,19 @@ class BertForSequenceClassification(BertPreTrainedModel):
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
         self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        try:
+            if(config.prefix_length>0):
+                self.prefix_embeddings = nn.Embedding(config.prefix_length, config.hidden_size)
+                self.mlp_layer = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                        nn.Tanh(),
+                        nn.Linear(config.hidden_size,config.hidden_size))
+            if(config.user_embeddings):
+                self.classifier = nn.Linear(config.hidden_size+2, config.num_labels)
+            else:
+                self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        except Exception as e:
+            print("Warning: User Embeddings Exception:",e)
+            self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
